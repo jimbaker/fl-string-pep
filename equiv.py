@@ -8,16 +8,16 @@ log = logging.getLogger("equiv")
 # Use namedtuple objects, because they are lightweight and somewhat
 # representative of a built-in type's performance
 
-FLCallableBase = namedtuple("FLCallable", ["call", "call_ex", "raw"])
+FLCallableBase = namedtuple("FLCallable", ["call_ex", "raw"])
 
 
 class FLCallable(FLCallableBase):
     # Instrument FLCallable to show its behavior with respect to evaluation
     counter = [0]
 
-    def __call__(self):
+    def __call__(self, cb=None):
         self.counter[0] += 1
-        return self.call(self)
+        return self.call_ex(self, cb)
 
     __str__ = __call__
 
@@ -31,8 +31,7 @@ class FLCallable(FLCallableBase):
 def log_stuff(n):
     for i in range(n):
         log.debug(FLCallable(
-            lambda self: f"Log Entry: {i}",
-            lambda self, cb: f"{cb(self, i)}",
+            lambda self, cb: f"Log Entry: {cb(self, i) if cb else i}",
             "LogEntry: {i}"))
 
 
