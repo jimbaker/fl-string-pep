@@ -1,6 +1,9 @@
 # mypy: disallow-untyped-defs
 
-from typing import Callable, Dict
+from __future__ import annotations
+
+from contextvars import ContextVar
+from typing import Callable, Dict, List, Optional
 
 # Called for each interpolation.
 #
@@ -61,7 +64,31 @@ print(s)
 print(s(lambda val, spec, text: repr(val)))
 print(repr(s))
 
+
 # Translation example
+
+
+class TS(FL):
+    __slots__: List[str] = []
+
+    def __call__(self, callback: CallbackType = None) -> str:
+        tf = translator_cv.get()
+        if tf is None:
+            if callback is None:
+                callback = default_callback
+            return super().__call__(callback)
+        return tf(self, callback)
+
+    def __repr__(self) -> str:
+        return "t" + repr(self.raw)
+
+
+TranslatorFunctionType = Callable[[TS, Optional[CallbackType]], str]
+
+# Per-context translator function
+translator_cv: ContextVar[Optional[TranslatorFunctionType]] = \
+  ContextVar("translation.callback", default=None)
+
 
 dutch = {
     "{person} invites {num_guests} guests to their party":
@@ -69,22 +96,45 @@ dutch = {
 }
 languages = {"nl": dutch}
 
-def translate(fl: FL, lang: str) -> str:
+# Per-context 2-letter lowercase language code
+lang_cv: ContextVar[str] = ContextVar("translation.language", default="en")
+
+
+def translate(fl: FL, lang: str=None) -> str:
+    if lang is None:
+        lang = lang_cv.get()
     langdb = languages.get(lang, {})
     translated = langdb.get(fl.raw, fl.raw)
     table: Dict[str, object] = {}
     def callback(value: object, spec: str, text: str) -> str:
         table[text] = value
         return "{}"
-    fl(callback)
+    FL.__call__(fl, callback)
     return translated.format(**table)
 
+
 person = "Guido"
-num_guests = 42
-sentence = FL("{person} invites {num_guests} guests to their party",
+sentence = TS("{person} invites {num_guests} guests to their party",
               lambda cb:
               f"{cb(person, '', 'person')} "
               f"invites {cb(num_guests, '', 'num_guests')} "
               f"guests to their party")
-print(translate(sentence, "en"))  # Guido invites 42 guests to their party
-print(translate(sentence, "nl"))  # Guido nodigt 42 gasten uit op hun feest
+print(repr(sentence))
+num_guests = 42
+print(translate(sentence, "en"))
+print(translate(sentence, "nl"))
+print(translate(sentence, "fr"))
+
+
+def example_tf(ts: TS, callback: Optional[CallbackType]) -> str:
+    if callback is not None:
+        raise ValueError(f"Cannot pass callback to example_tf(): {callback}")
+    return translate(ts)
+
+
+translator_cv.set(example_tf)
+num_guests = 41
+print(sentence)
+num_guests = 40
+lang_cv.set("nl")
+print(sentence)
