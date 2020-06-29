@@ -1,6 +1,20 @@
+from __future__ import annotations
+
 import logging
 import shlex
 from string import Formatter
+from typing import *
+
+
+class Tag(Protocol):
+
+    def __call__(self, thunk: Thunk) -> Thunk:
+        pass
+
+    def rewrite(self, thunk: Thunk) -> str:
+        pass
+
+Callback = Callable[[], str]
 
 
 # FIXME look more at the engineering design of mutable callsites (and supporting
@@ -12,16 +26,17 @@ from string import Formatter
 # FIXME add more type hints - this is important to document this idea!
 
 class Thunk:
-    def __init__(self, tag, raw, function):
+
+    def __init__(self, tag: Tag, raw: str, function: Callback):
         self.tag = tag
         self.raw = raw
         self.function = function  # must always be specified with a default function to get symtab
         self.is_set = False
 
-    def reset_target(self):
+    def reset_target(self) -> None:
         self.is_set = False
 
-    def set_target(self, rewriter):
+    def set_target(self, rewriter: Callable[[Thunk], str]) -> None:
         # NOTE right now this will race with respect to multiple threads
         # entering this method. Given sequential consistency semantics - every
         # entering thread will see self.is_set without reordering - so long as
@@ -43,11 +58,12 @@ def outer({cellvars}):
         return {function_body}
 """
         # Use to capture the side effect of defining `outer`
-        capture = {}
+        capture: Dict[str, Any] = {}
 
         # Use the globals from the old function as well - note this is the inner
         # function, not the original outer function. Close enough.
-        exec(wrapped, self.function.__globals__, capture)
+        globals: Dict[str, object] = self.function.__globals__  # type: ignore[attr-defined]
+        exec(wrapped, globals, capture)
 
         # FIXME Hard-coded index based on above, but should suffice for our demo
         # purposes - can always look for the inner function name, etc
@@ -58,10 +74,10 @@ def outer({cellvars}):
         # Python-based rewrite scheme that might do arbitrary things.
         self.is_set = True
 
-    def __call__(self):
+    def __call__(self) -> str:
         return self.function()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.function()
 
 
@@ -72,8 +88,8 @@ def outer({cellvars}):
 # instead reference in some fashion. Requires more thinking on the scope
 # analysis!
 
-def add_expr_callback(s, cb):
-    def unparse(arg, separator):
+def add_expr_callback(s: str, cb: str) -> str:
+    def unparse(arg: Optional[str], separator: str) -> str:
         return f"{separator}{arg}" if arg else ""
 
     parts = []
@@ -86,7 +102,7 @@ def add_expr_callback(s, cb):
 # Goes into a utility library - let's say `shell_literal_support`. Pretend it is
 # in there for now.
 
-class shell_literal:
+class ShellLiteral(Tag):
 
     # NOTE Since the thunk is retuned by this call, the receiver in the callsite can
     # choose to do additional manipulations on it. We will need a demo of this
@@ -102,14 +118,14 @@ class shell_literal:
         return add_expr_callback(thunk.raw, "shlex.quote")
 
 
-shell_literal = shell_literal()
+shell_literal = ShellLiteral()
 
 
 # Our pretend main module
 
 sh = shell_literal  # simulate `from shell_literal_support import shell_literal as sh`
 
-def print_dir(path):
+def print_dir(path: str) -> None:
     print(sh(Thunk(sh, r"ls -l {path}", lambda: f"ls -l {path}")))
 
 
@@ -118,9 +134,13 @@ print_dir(path="/Users/Jim Baker - Admin/App Code & More/*.py")
 
 # Alternative, showing the use of the original default
 
-class log_literal:
+class log_literal(Tag):
+
     def __call__(self, thunk: Thunk) -> Thunk:
         return thunk
+
+    def rewrite(self, thunk: Thunk) -> str:
+        raise AssertionError("should not be reached")
 
 l = log_literal()
 
