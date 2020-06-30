@@ -11,8 +11,6 @@ class Tag(Protocol):
     def __call__(self, thunk: Thunk) -> Thunk:
         pass
 
-    def rewrite(self, thunk: Thunk) -> str:
-        pass
 
 Callback = Callable[[], str]
 
@@ -139,8 +137,6 @@ class log_literal(Tag):
     def __call__(self, thunk: Thunk) -> Thunk:
         return thunk
 
-    def rewrite(self, thunk: Thunk) -> str:
-        raise AssertionError("should not be reached")
 
 l = log_literal()
 
